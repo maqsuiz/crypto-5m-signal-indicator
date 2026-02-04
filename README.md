@@ -20,6 +20,18 @@ It is designed for educational and experimental purposes.
 
 ## AI Assistance
 AI prompt engineering was used to refine indicator logic, reduce noise, and improve signal clarity.
+## System Overview
+This project combines a short-term crypto trading indicator with
+email-based signal ingestion and Discord webhook notifications.
+
+## Alert Integration
+- Gmail is used as an intermediary data source
+- Incoming messages are parsed using PHP
+- Valid signals trigger Discord webhook alerts
+
+## Use Case
+Designed for real-time signal monitoring and alert delivery
+rather than automated execution.
 
 ## Disclaimer
 This indicator is not financial advice.
