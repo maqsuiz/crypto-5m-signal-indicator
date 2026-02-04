@@ -1,0 +1,455 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Antigravity Scalper PRO - Smart Signals Style (5 DAKİKALIK)
+
+//@version=5
+indicator("AGS Smart Signals 5M", shorttitle="AGS 5M", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AYARLAR (5 DAKİKALIK OPTİMİZE)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Cloud/Ribbon Ayarları (5dk için)
+cloudLength     = input.int(20, "Cloud Periyodu", minval=5, maxval=50, group="☁️ Cloud Ayarları")
+cloudMult       = input.float(2.0, "Cloud Genişliği", minval=0.5, maxval=4.0, step=0.1, group="☁️ Cloud Ayarları")
+smoothLength    = input.int(5, "Yumuşatma", minval=1, maxval=10, group="☁️ Cloud Ayarları")
+
+// Trend EMA (5dk için)
+trendLength     = input.int(50, "Trend EMA", minval=20, maxval=200, group="📈 Trend")
+
+// RSI Ayarları (5dk için)
+rsiLength       = input.int(14, "RSI Periyodu", minval=5, maxval=30, group="🔍 RSI")
+rsiOversold     = input.int(30, "Aşırı Satım", minval=10, maxval=40, group="🔍 RSI")
+rsiOverbought   = input.int(70, "Aşırı Alım", minval=60, maxval=90, group="🔍 RSI")
+
+// Sinyal Hassasiyeti (5dk için dengeli)
+signalSensitivity = input.int(3, "Sinyal Hassasiyeti (1-5)", minval=1, maxval=5, group="🎯 Sinyaller")
+
+// Görsellik
+showCloud       = input.bool(true, "Cloud Göster", group="🎨 Görsellik")
+showSignals     = input.bool(true, "Sinyalleri Göster", group="🎨 Görsellik")
+showLevels      = input.bool(true, "Fiyat Seviyelerini Göster", group="🎨 Görsellik")
+showPanel       = input.bool(true, "Panel Göster", group="🎨 Görsellik")
+showFloatingPct = input.bool(true, "Yüzde Etiketlerini Göster", group="🎨 Görsellik")
+showPredZone    = input.bool(true, "Tahmin Zone'unu Göster", group="🎨 Görsellik")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HESAPLAMALAR
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Trend EMA
+trendEma = ta.ema(close, trendLength)
+isUptrend = close > trendEma
+isDowntrend = close < trendEma
+
+// ATR
+atrValue = ta.atr(14)
+
+// Cloud Bantları (Keltner Channel benzeri)
+basis = ta.ema(close, cloudLength)
+upperBand1 = basis + (atrValue * cloudMult * 0.5)
+upperBand2 = basis + (atrValue * cloudMult * 1.0)
+upperBand3 = basis + (atrValue * cloudMult * 1.5)
+lowerBand1 = basis - (atrValue * cloudMult * 0.5)
+lowerBand2 = basis - (atrValue * cloudMult * 1.0)
+lowerBand3 = basis - (atrValue * cloudMult * 1.5)
+
+// Yumuşatılmış bantlar
+smoothUpper1 = ta.ema(upperBand1, smoothLength)
+smoothUpper2 = ta.ema(upperBand2, smoothLength)
+smoothUpper3 = ta.ema(upperBand3, smoothLength)
+smoothLower1 = ta.ema(lowerBand1, smoothLength)
+smoothLower2 = ta.ema(lowerBand2, smoothLength)
+smoothLower3 = ta.ema(lowerBand3, smoothLength)
+smoothBasis = ta.ema(basis, smoothLength)
+
+// RSI
+rsiValue = ta.rsi(close, rsiLength)
+
+// MACD
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+macdBullish = macdLine > signalLine
+macdBearish = macdLine < signalLine
+
+// Momentum
+momentum = close - close[5]
+momentumUp = momentum > 0
+momentumDown = momentum < 0
+
+// Volume
+volumeMA = ta.sma(volume, 20)
+volumeHigh = volume > volumeMA * 1.5
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SİNYAL MANTIĞI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Temel koşullar
+priceAboveBasis = close > smoothBasis
+priceBelowBasis = close < smoothBasis
+
+// Crossover durumları
+crossAboveLower = ta.crossover(close, smoothLower2)    // Alt bandı yukarı kır
+crossBelowUpper = ta.crossunder(close, smoothUpper2)   // Üst bandı aşağı kır
+crossAboveBasis = ta.crossover(close, smoothBasis)     // Ortayı yukarı kır
+crossBelowBasis = ta.crossunder(close, smoothBasis)    // Ortayı aşağı kır
+
+// Trend değişimi
+trendTurnUp = ta.crossover(close, trendEma)            // Trend yukarı döndü
+trendTurnDown = ta.crossunder(close, trendEma)         // Trend aşağı döndü
+
+// Onay puanları
+bullScore = (isUptrend ? 1 : 0) + (macdBullish ? 1 : 0) + (rsiValue < 50 ? 1 : 0) + (momentumUp ? 1 : 0) + (volumeHigh ? 1 : 0)
+bearScore = (isDowntrend ? 1 : 0) + (macdBearish ? 1 : 0) + (rsiValue > 50 ? 1 : 0) + (momentumDown ? 1 : 0) + (volumeHigh ? 1 : 0)
+
+// Hassasiyete göre sinyal eşiği (1=çok hassas, 5=çok sıkı)
+requiredScore = signalSensitivity
+
+// Final sinyaller (daha dengeli)
+// BUY: Alt bandı kır VEYA trend yukarı dön VE puanı karşıla
+buySignal = (crossAboveLower or (crossAboveBasis and isUptrend) or trendTurnUp) and bullScore >= requiredScore
+
+// SELL: Üst bandı kır VEYA trend aşağı dön VE puanı karşıla  
+sellSignal = (crossBelowUpper or (crossBelowBasis and isDowntrend) or trendTurnDown) and bearScore >= requiredScore
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CLOUD BANTLARI (GÖRSEL)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Trend rengine göre cloud renkleri
+bullColor1 = color.new(#00ffff, 60)  // Açık cyan
+bullColor2 = color.new(#00cccc, 70)  // Orta cyan
+bullColor3 = color.new(#009999, 80)  // Koyu cyan
+
+bearColor1 = color.new(#ff4444, 60)  // Açık kırmızı
+bearColor2 = color.new(#cc3333, 70)  // Orta kırmızı
+bearColor3 = color.new(#992222, 80)  // Koyu kırmızı
+
+// Üst cloud (yeşil/cyan renk - boğa bölgesi)
+upperPlot3 = plot(showCloud ? smoothUpper3 : na, color=color.new(color.aqua, 90), linewidth=1)
+upperPlot2 = plot(showCloud ? smoothUpper2 : na, color=color.new(color.aqua, 85), linewidth=1)
+upperPlot1 = plot(showCloud ? smoothUpper1 : na, color=color.new(color.aqua, 80), linewidth=1)
+basisPlot = plot(showCloud ? smoothBasis : na, color=isUptrend ? color.new(color.lime, 0) : color.new(color.red, 0), linewidth=2)
+lowerPlot1 = plot(showCloud ? smoothLower1 : na, color=color.new(color.red, 80), linewidth=1)
+lowerPlot2 = plot(showCloud ? smoothLower2 : na, color=color.new(color.red, 85), linewidth=1)
+lowerPlot3 = plot(showCloud ? smoothLower3 : na, color=color.new(color.red, 90), linewidth=1)
+
+// Cloud dolguları
+fill(upperPlot3, upperPlot2, color=bullColor3)
+fill(upperPlot2, upperPlot1, color=bullColor2)
+fill(upperPlot1, basisPlot, color=bullColor1)
+fill(basisPlot, lowerPlot1, color=bearColor1)
+fill(lowerPlot1, lowerPlot2, color=bearColor2)
+fill(lowerPlot2, lowerPlot3, color=bearColor3)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SİNYAL İŞARETLERİ (Buy/Sell Etiketleri)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// AL sinyali (yeşil "Buy" etiketi)
+plotshape(showSignals and buySignal, 
+     title="Buy Signal",
+     text="Buy",
+     location=location.belowbar, 
+     style=shape.labelup, 
+     size=size.small, 
+     color=color.new(#26A69A, 0),
+     textcolor=color.white)
+
+// SAT sinyali (kırmızı "Sell" etiketi)
+plotshape(showSignals and sellSignal, 
+     title="Sell Signal",
+     text="Sell",
+     location=location.abovebar, 
+     style=shape.labeldown, 
+     size=size.small, 
+     color=color.new(#EF5350, 0),
+     textcolor=color.white)
+
+// Küçük X işaretleri (zayıf sinyaller için)
+weakBuy = (crossAboveLower or crossAboveBasis) and bullScore >= 2 and bullScore < requiredScore
+weakSell = (crossBelowUpper or crossBelowBasis) and bearScore >= 2 and bearScore < requiredScore
+
+plotshape(showSignals and weakBuy and not buySignal, 
+     title="Weak Buy",
+     text="",
+     location=location.belowbar, 
+     style=shape.xcross, 
+     size=size.tiny, 
+     color=color.new(color.gray, 50))
+
+plotshape(showSignals and weakSell and not sellSignal, 
+     title="Weak Sell",
+     text="",
+     location=location.abovebar, 
+     style=shape.xcross, 
+     size=size.tiny, 
+     color=color.new(color.gray, 50))
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FİYAT SEVİYELERİ (Sağ tarafta gösterilecek)
+// ══════════════════════════════════════════════════════════════════════════════
+
+var line resistanceLine = na
+var line supportLine = na
+var line tp1Line = na
+var line tp2Line = na
+var label resistanceLabel = na
+var label supportLabel = na
+
+// Pivot noktaları
+pivotHigh = ta.pivothigh(high, 10, 10)
+pivotLow = ta.pivotlow(low, 10, 10)
+
+var float currentResistance = na
+var float currentSupport = na
+
+if not na(pivotHigh)
+    currentResistance := pivotHigh
+if not na(pivotLow)
+    currentSupport := pivotLow
+
+// SL/TP Seviyeleri
+slLevel = isUptrend ? close - (atrValue * 1.5) : close + (atrValue * 1.5)
+tp1Level = isUptrend ? close + (atrValue * 2.0) : close - (atrValue * 2.0)
+tp2Level = isUptrend ? close + (atrValue * 3.0) : close - (atrValue * 3.0)
+
+if barstate.islast and showLevels
+    // Eski çizgileri sil
+    line.delete(resistanceLine)
+    line.delete(supportLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+    label.delete(resistanceLabel)
+    label.delete(supportLabel)
+    
+    // Direnç çizgisi
+    if not na(currentResistance)
+        resistanceLine := line.new(bar_index - 50, currentResistance, bar_index + 10, currentResistance, 
+             color=color.new(color.red, 30), width=2, style=line.style_solid)
+        resistanceLabel := label.new(bar_index + 12, currentResistance, str.tostring(currentResistance, "#.##"), 
+             color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_left, size=size.small)
+    
+    // Destek çizgisi
+    if not na(currentSupport)
+        supportLine := line.new(bar_index - 50, currentSupport, bar_index + 10, currentSupport, 
+             color=color.new(color.green, 30), width=2, style=line.style_solid)
+        supportLabel := label.new(bar_index + 12, currentSupport, str.tostring(currentSupport, "#.##"), 
+             color=color.new(color.green, 20), textcolor=color.white, style=label.style_label_left, size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// İSTATİSTİK PANELİ
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Sinyal sayaçları
+var int totalBuys = 0
+var int totalSells = 0
+
+if buySignal
+    totalBuys := totalBuys + 1
+if sellSignal
+    totalSells := totalSells + 1
+
+// Panel (sağ alt)
+var table statsPanel = table.new(position.bottom_right, 3, 5, bgcolor=color.new(#1a1a2e, 10), border_width=1, border_color=color.new(color.gray, 50))
+
+// Tahmin Paneli (sağ üst) - BÜYÜK
+var table predictionPanel = table.new(position.top_right, 2, 10, bgcolor=color.new(#1a1a2e, 10), border_width=2, border_color=color.new(color.aqua, 50))
+
+// Tahmin hesaplamaları
+predictionScore = (isUptrend ? 25 : -25) + (macdBullish ? 15 : -15) + (rsiValue < 50 ? 10 : -10) + (momentumUp ? 15 : -15) + (bullScore > bearScore ? 10 : -10)
+predictionScore := math.max(-100, math.min(100, predictionScore))
+
+// Hedef fiyatlar
+targetUp = close + (atrValue * 2)
+targetDown = close - (atrValue * 2)
+expectedTarget = predictionScore > 0 ? targetUp : targetDown
+
+// Lineer regresyon ile tahmin
+linRegSlope = ta.linreg(close, 20, 0) - ta.linreg(close, 20, 1)
+projectedPrice = close + (linRegSlope * 10)
+
+// Aşırı Alım/Satım Durumu
+isOverboughtRSI = rsiValue > rsiOverbought
+isOversoldRSI = rsiValue < rsiOversold
+
+if barstate.islast and showPanel
+    // ═══ TAHMİN PANELİ (SAĞ ÜST) ═══
+    table.cell(predictionPanel, 0, 0, "🔮 TAHMİN", text_color=color.aqua, text_size=size.large, bgcolor=color.new(#16213e, 10))
+    table.cell(predictionPanel, 1, 0, syminfo.ticker, text_color=color.white, text_size=size.normal, bgcolor=color.new(#16213e, 10))
+    
+    // ⚠️ AŞIRI ALIM/SATIM UYARISI
+    warningText = isOverboughtRSI ? "⚠️ AŞIRI ALIM!" : isOversoldRSI ? "⚠️ AŞIRI SATIM!" : "✅ NORMAL"
+    warningColor = isOverboughtRSI ? color.red : isOversoldRSI ? color.lime : color.gray
+    warningBg = isOverboughtRSI ? color.new(color.red, 70) : isOversoldRSI ? color.new(color.lime, 70) : color.new(#16213e, 10)
+    table.cell(predictionPanel, 0, 1, "DURUM:", text_color=color.white, text_size=size.normal, bgcolor=warningBg)
+    table.cell(predictionPanel, 1, 1, warningText, text_color=warningColor, text_size=size.normal, bgcolor=warningBg)
+    
+    // Yön
+    dirText = predictionScore > 30 ? "🚀 YUKARI" : predictionScore < -30 ? "💥 AŞAĞI" : "➡️ YATAY"
+    dirColor = predictionScore > 30 ? color.lime : predictionScore < -30 ? color.red : color.yellow
+    table.cell(predictionPanel, 0, 2, "Yön:", text_color=color.silver, text_size=size.normal)
+    table.cell(predictionPanel, 1, 2, dirText, text_color=dirColor, text_size=size.normal)
+    
+    // Skor
+    table.cell(predictionPanel, 0, 3, "Skor:", text_color=color.silver, text_size=size.normal)
+    table.cell(predictionPanel, 1, 3, str.tostring(predictionScore, "#") + "/100", text_color=dirColor, text_size=size.normal)
+    
+    // RSI
+    rsiColor = isOverboughtRSI ? color.red : isOversoldRSI ? color.lime : color.gray
+    table.cell(predictionPanel, 0, 4, "RSI:", text_color=color.silver, text_size=size.normal)
+    table.cell(predictionPanel, 1, 4, str.tostring(rsiValue, "#.#"), text_color=rsiColor, text_size=size.normal)
+    
+    // Projeksiyon
+    table.cell(predictionPanel, 0, 5, "10 Bar Sonra:", text_color=color.silver, text_size=size.small)
+    table.cell(predictionPanel, 1, 5, str.tostring(projectedPrice, "#.####"), text_color=projectedPrice > close ? color.lime : color.red, text_size=size.small)
+    
+    // Hedef Yukarı
+    table.cell(predictionPanel, 0, 6, "Hedef ↑:", text_color=color.silver, text_size=size.small)
+    table.cell(predictionPanel, 1, 6, str.tostring(targetUp, "#.####"), text_color=color.lime, text_size=size.small)
+    
+    // Hedef Aşağı
+    table.cell(predictionPanel, 0, 7, "Hedef ↓:", text_color=color.silver, text_size=size.small)
+    table.cell(predictionPanel, 1, 7, str.tostring(targetDown, "#.####"), text_color=color.red, text_size=size.small)
+    
+    // Mevcut Fiyat
+    table.cell(predictionPanel, 0, 8, "Fiyat:", text_color=color.silver, text_size=size.normal)
+    table.cell(predictionPanel, 1, 8, str.tostring(close, "#.####"), text_color=color.white, text_size=size.normal)
+    
+    // Trend
+    trendText = isUptrend ? "📈 YUKARI" : "📉 AŞAĞI"
+    table.cell(predictionPanel, 0, 9, "Trend:", text_color=color.silver, text_size=size.small)
+    table.cell(predictionPanel, 1, 9, trendText, text_color=isUptrend ? color.lime : color.red, text_size=size.small)
+    
+    // ═══ İSTATİSTİK PANELİ (SAĞ ALT) ═══
+    // Başlık
+    table.cell(statsPanel, 0, 0, "Sinyal Tipi", text_color=color.gray, text_size=size.small, bgcolor=color.new(#16213e, 10))
+    table.cell(statsPanel, 1, 0, "Sinyal", text_color=color.gray, text_size=size.small, bgcolor=color.new(#16213e, 10))
+    table.cell(statsPanel, 2, 0, "RSI", text_color=color.gray, text_size=size.small, bgcolor=color.new(#16213e, 10))
+    
+    // Smart Signals satırı
+    signalText = isUptrend ? "▲" : "▼"
+    signalColor = isUptrend ? color.lime : color.red
+    table.cell(statsPanel, 0, 1, "Smart Signals", text_color=color.white, text_size=size.small)
+    table.cell(statsPanel, 1, 1, signalText, text_color=signalColor, text_size=size.small)
+    table.cell(statsPanel, 2, 1, str.tostring(rsiValue, "#.#"), text_color=rsiValue > 70 ? color.red : rsiValue < 30 ? color.green : color.gray, text_size=size.small)
+    
+    // Fair Value satırı
+    fvDiff = ((close - smoothBasis) / smoothBasis) * 100
+    table.cell(statsPanel, 0, 2, "Fair Value Farkı", text_color=color.white, text_size=size.small)
+    table.cell(statsPanel, 1, 2, fvDiff > 0 ? "▲" : "▼", text_color=fvDiff > 0 ? color.lime : color.red, text_size=size.small)
+    table.cell(statsPanel, 2, 2, str.tostring(math.abs(fvDiff), "#.#") + "%", text_color=color.gray, text_size=size.small)
+    
+    // Trend satırı
+    table.cell(statsPanel, 0, 3, "Trend Gücü", text_color=color.white, text_size=size.small)
+    table.cell(statsPanel, 1, 3, bullScore > bearScore ? "Boğa" : bearScore > bullScore ? "Ayı" : "Nötr", text_color=bullScore > bearScore ? color.lime : bearScore > bullScore ? color.red : color.gray, text_size=size.small)
+    table.cell(statsPanel, 2, 3, str.tostring(math.max(bullScore, bearScore)) + "/5", text_color=color.gray, text_size=size.small)
+    
+    // Momentum satırı
+    table.cell(statsPanel, 0, 4, "Momentum", text_color=color.white, text_size=size.small)
+    table.cell(statsPanel, 1, 4, momentumUp ? "+" : "-", text_color=momentumUp ? color.lime : color.red, text_size=size.small)
+    table.cell(statsPanel, 2, 4, str.tostring(math.abs(momentum), "#.####"), text_color=color.gray, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FLOATING TAHMİN YÜZDELERİ VE ZONE (GÖRSELDEKİ GİBİ)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Tahmin yüzdesini hesapla (0-100 arası)
+bullProbRaw = 50 + (predictionScore / 2)  // -100/+100 -> 0-100 dönüşümü
+bullProbability = math.max(0, math.min(100, bullProbRaw))
+bearProbability = 100 - bullProbability
+
+// Floating etiketler için pozisyon hesapla
+floatLabelOffset = atrValue * 2.5
+upperLabelPos = high + floatLabelOffset
+lowerLabelPos = low - floatLabelOffset
+
+// Floating tahmin etiketleri (her 5 barda bir göster - daha clean görünüm)
+var label floatingBullLabel = na
+var label floatingBearLabel = na
+
+// Zone için box
+var box predictionZone = na
+
+if barstate.islast and showFloatingPct
+    // Eski etiketleri sil
+    label.delete(floatingBullLabel)
+    label.delete(floatingBearLabel)
+    
+    // Yeşil tahmin etiketi (yukarıda) 
+    bullPctText = str.tostring(math.round(bullProbability)) + "%"
+    floatingBullLabel := label.new(
+         bar_index, 
+         upperLabelPos, 
+         bullPctText,
+         color = color.new(#26A69A, 0),
+         textcolor = color.white,
+         style = label.style_label_down,
+         size = size.normal,
+         tooltip = "Yukarı Olasılık: " + bullPctText)
+    
+    // Kırmızı tahmin etiketi (aşağıda)
+    bearPctText = str.tostring(math.round(bearProbability)) + "%"
+    floatingBearLabel := label.new(
+         bar_index, 
+         lowerLabelPos, 
+         bearPctText,
+         color = color.new(#EF5350, 0),
+         textcolor = color.white,
+         style = label.style_label_up,
+         size = size.normal,
+         tooltip = "Aşağı Olasılık: " + bearPctText)
+
+// Tahmin Zone'u (son N bar için arka plan)
+zoneLength = 15  // Zone genişliği (bar sayısı)
+
+if barstate.islast and showPredZone
+    // Eski zone'u sil
+    box.delete(predictionZone)
+    
+    // Zone rengi (bullish/bearish'e göre)
+    zoneColor = bullProbability > 55 ? color.new(#26A69A, 85) : 
+                 bearProbability > 55 ? color.new(#EF5350, 85) : 
+                 color.new(#FFA500, 85)  // Nötr ise turuncu
+    
+    // Yükseklik hesapla (son N barın high/low'u)
+    var float zoneHigh = high
+    var float zoneLow = low
+    
+    for i = 0 to zoneLength - 1
+        if bar_index - i >= 0
+            zoneHigh := math.max(zoneHigh, high[i])
+            zoneLow := math.min(zoneLow, low[i])
+    
+    // Biraz padding ekle
+    zonePadding = atrValue * 0.5
+    
+    // Zone box'ını çiz
+    zoneBorderColor = bullProbability > 55 ? color.new(#26A69A, 50) : 
+                       bearProbability > 55 ? color.new(#EF5350, 50) : 
+                       color.new(#FFA500, 50)
+    
+    predictionZone := box.new(
+         left = bar_index - zoneLength + 1,
+         top = zoneHigh + zonePadding,
+         right = bar_index + 5,
+         bottom = zoneLow - zonePadding,
+         border_color = zoneBorderColor,
+         border_width = 1,
+         border_style = line.style_dotted,
+         bgcolor = zoneColor)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ALERTLER
+// ══════════════════════════════════════════════════════════════════════════════
+
+alertcondition(buySignal, title="🟢 AL Sinyali", message="AGS Smart: AL SİNYALİ! {{ticker}} @ {{close}}")
+alertcondition(sellSignal, title="🔴 SAT Sinyali", message="AGS Smart: SAT SİNYALİ! {{ticker}} @ {{close}}")
+
+// Alert gönderimi
+if buySignal
+    msg = "AL SINYALI | " + syminfo.ticker + " | Fiyat: " + str.tostring(close, "#.#####") + " | RSI: " + str.tostring(rsiValue, "#.#") + " | Guc: " + str.tostring(bullScore) + "/5"
+    alert(msg, alert.freq_once_per_bar_close)
+
+if sellSignal
+    msg = "SAT SINYALI | " + syminfo.ticker + " | Fiyat: " + str.tostring(close, "#.#####") + " | RSI: " + str.tostring(rsiValue, "#.#") + " | Guc: " + str.tostring(bearScore) + "/5"
+    alert(msg, alert.freq_once_per_bar_close)
